@@ -20,6 +20,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -54,8 +55,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            LiveFootballTheme {
-                AppNavigation()
+            LiveFootballTheme(darkTheme = true) { // Forziamo tema scuro per sport app
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    AppNavigation()
+                }
             }
         }
     }
@@ -122,19 +128,31 @@ fun CategoryScreen(viewModel: SportViewModel, navController: NavController) {
     Scaffold(
         topBar = { TopAppBar(title = { Text("Sports Categories") }) }
     ) { padding ->
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                contentPadding = padding,
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(categories) { category ->
-                    CategoryItem(category) {
-                        navController.navigate("channels/${category.cid}")
+        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+            if (isLoading) {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            } else if (categories.isEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Nessun dato trovato", style = MaterialTheme.typography.bodyLarge)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { viewModel.loadCategories() }) {
+                        Text("Riprova")
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(8.dp)
+                ) {
+                    items(categories) { category ->
+                        CategoryItem(category) {
+                            navController.navigate("channels/${category.cid ?: ""}")
+                        }
                     }
                 }
             }
@@ -147,11 +165,13 @@ fun CategoryItem(category: Category, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .padding(8.dp)
-            .clickable { onClick() }
+            .fillMaxWidth()
+            .clickable { onClick() },
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             AsyncImage(
-                model = category.categoryImage,
+                model = category.categoryImage ?: "",
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -159,10 +179,10 @@ fun CategoryItem(category: Category, onClick: () -> Unit) {
                 contentScale = ContentScale.Crop
             )
             Text(
-                text = category.categoryName,
+                text = category.categoryName ?: "Unknown",
                 modifier = Modifier.padding(8.dp),
                 fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.bodyLarge
+                style = MaterialTheme.typography.bodyMedium
             )
         }
     }
@@ -181,20 +201,31 @@ fun ChannelScreen(categoryId: String, viewModel: SportViewModel, navController: 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Channels") }) }
     ) { padding ->
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            LazyColumn(contentPadding = padding) {
-                items(channels) { channel ->
-                    ChannelItem(channel) {
-                        if (channel.channelType == "exo") {
-                            navController.navigate("exoPlayer/${channel.channelId}/$categoryId")
-                        } else {
-                            val encodedUrl = URLEncoder.encode(channel.channelUrl, StandardCharsets.UTF_8.toString())
-                            val agent = URLEncoder.encode(channel.agent ?: "", StandardCharsets.UTF_8.toString())
-                            navController.navigate("webView/$encodedUrl/$agent")
+        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+            if (isLoading) {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            } else if (channels.isEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Nessun canale trovato")
+                    Button(onClick = { viewModel.loadChannels(categoryId) }) {
+                        Text("Riprova")
+                    }
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(channels) { channel ->
+                        ChannelItem(channel) {
+                            if (channel.channelType == "exo") {
+                                navController.navigate("exoPlayer/${channel.channelId}/$categoryId")
+                            } else {
+                                val encodedUrl = URLEncoder.encode(channel.channelUrl ?: "", StandardCharsets.UTF_8.toString())
+                                val agent = URLEncoder.encode(channel.agent ?: "", StandardCharsets.UTF_8.toString())
+                                navController.navigate("webView/$encodedUrl/$agent")
+                            }
                         }
                     }
                 }
@@ -206,17 +237,18 @@ fun ChannelScreen(categoryId: String, viewModel: SportViewModel, navController: 
 @Composable
 fun ChannelItem(channel: Channel, onClick: () -> Unit) {
     ListItem(
-        headlineContent = { Text(channel.channelName) },
-        supportingContent = { Text(channel.channelType.uppercase()) },
+        headlineContent = { Text(channel.channelName ?: "Unknown", fontWeight = FontWeight.Bold) },
+        supportingContent = { Text((channel.channelType ?: "N/A").uppercase(), color = Color.Gray) },
         modifier = Modifier.clickable { onClick() }
     )
+    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = Color.LightGray)
 }
 
 @Composable
 fun ExoPlayerScreen(initialChannel: Channel, viewModel: SportViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var currentUrl by remember { mutableStateOf(initialChannel.channelUrl) }
+    var currentUrl by remember { mutableStateOf(initialChannel.channelUrl ?: "") }
     var isRetrying by remember { mutableStateOf(false) }
 
     val exoPlayer = remember {
@@ -249,17 +281,19 @@ fun ExoPlayerScreen(initialChannel: Channel, viewModel: SportViewModel) {
     }
 
     LaunchedEffect(currentUrl) {
-        val dataSourceFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent(initialChannel.agent ?: "Mozilla/5.0")
-            .setDefaultRequestProperties(mapOf(
-                "Referer" to (initialChannel.eh1?.replace("Referer: ", "") ?: ""),
-                "Origin" to (initialChannel.origin ?: "")
-            ))
-        val mediaSource = HlsMediaSource.Factory(dataSourceFactory)
-            .createMediaSource(MediaItem.fromUri(currentUrl))
-        exoPlayer.setMediaSource(mediaSource)
-        exoPlayer.prepare()
-        exoPlayer.playWhenReady = true
+        if (currentUrl.isNotEmpty()) {
+            val dataSourceFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent(initialChannel.agent ?: "Mozilla/5.0")
+                .setDefaultRequestProperties(mapOf(
+                    "Referer" to (initialChannel.eh1?.replace("Referer: ", "") ?: ""),
+                    "Origin" to (initialChannel.origin ?: "")
+                ))
+            val mediaSource = HlsMediaSource.Factory(dataSourceFactory)
+                .createMediaSource(MediaItem.fromUri(currentUrl))
+            exoPlayer.setMediaSource(mediaSource)
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+        }
     }
 
     DisposableEffect(Unit) {
@@ -295,7 +329,6 @@ fun WebViewScreen(url: String, agent: String) {
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
-                        // Inject JS to hide ads/unwanted elements and try to force fullscreen
                         view?.evaluateJavascript(
                             """
                             (function() {
