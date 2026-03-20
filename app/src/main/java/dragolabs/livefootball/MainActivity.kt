@@ -22,18 +22,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.hls.HlsMediaSource
-import androidx.media3.ui.PlayerView
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -44,8 +36,8 @@ import coil.compose.AsyncImage
 import dragolabs.livefootball.model.Category
 import dragolabs.livefootball.model.Channel
 import dragolabs.livefootball.ui.theme.LiveFootballTheme
+import dragolabs.livefootball.ui.VideoPlayer
 import dragolabs.livefootball.viewmodel.SportViewModel
-import kotlinx.coroutines.launch
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -55,7 +47,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            LiveFootballTheme(darkTheme = true) { // Forziamo tema scuro per sport app
+            LiveFootballTheme(darkTheme = true) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -84,17 +76,22 @@ fun AppNavigation() {
             ChannelScreen(categoryId, viewModel, navController)
         }
         composable(
-            "exoPlayer/{channelId}/{categoryId}",
+            "videoPlayer/{channelId}/{categoryId}",
             arguments = listOf(
                 navArgument("channelId") { type = NavType.StringType },
                 navArgument("categoryId") { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val channelId = backStackEntry.arguments?.getString("channelId") ?: ""
-            val categoryId = backStackEntry.arguments?.getString("categoryId") ?: ""
-            val channel = viewModel.channels.collectAsState().value.find { it.channelId == channelId }
+            val channels by viewModel.channels.collectAsState()
+            val channel = channels.find { it.channelId == channelId }
             if (channel != null) {
-                ExoPlayerScreen(channel, viewModel)
+                VideoPlayer(
+                    url = channel.channelUrl,
+                    userAgent = channel.agent,
+                    referer = channel.eh1,
+                    origin = channel.origin
+                )
             }
         }
         composable(
@@ -108,7 +105,7 @@ fun AppNavigation() {
             val url = URLDecoder.decode(encodedUrl, StandardCharsets.UTF_8.toString())
             val encodedAgent = backStackEntry.arguments?.getString("agent") ?: ""
             val agent = URLDecoder.decode(encodedAgent, StandardCharsets.UTF_8.toString())
-            WebViewScreen(url, agent)
+            WebViewContent(url, agent)
         }
     }
 }
@@ -219,8 +216,9 @@ fun ChannelScreen(categoryId: String, viewModel: SportViewModel, navController: 
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(channels) { channel ->
                         ChannelItem(channel) {
-                            if (channel.channelType == "exo") {
-                                navController.navigate("exoPlayer/${channel.channelId}/$categoryId")
+                            val isNative = channel.channelType.lowercase().let { it == "exo" || it == "url" }
+                            if (isNative) {
+                                navController.navigate("videoPlayer/${channel.channelId}/$categoryId")
                             } else {
                                 val encodedUrl = URLEncoder.encode(channel.channelUrl ?: "", StandardCharsets.UTF_8.toString())
                                 val agent = URLEncoder.encode(channel.agent ?: "", StandardCharsets.UTF_8.toString())
@@ -244,82 +242,9 @@ fun ChannelItem(channel: Channel, onClick: () -> Unit) {
     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = Color.LightGray)
 }
 
-@Composable
-fun ExoPlayerScreen(initialChannel: Channel, viewModel: SportViewModel) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var currentUrl by remember { mutableStateOf(initialChannel.channelUrl ?: "") }
-    var isRetrying by remember { mutableStateOf(false) }
-
-    val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            addListener(object : Player.Listener {
-                override fun onPlayerError(error: PlaybackException) {
-                    if (!isRetrying && initialChannel.cUrl != null) {
-                        isRetrying = true
-                        scope.launch {
-                            val newUrl = viewModel.refreshChannelUrl(initialChannel)
-                            if (newUrl != null) {
-                                currentUrl = newUrl
-                                val dataSourceFactory = DefaultHttpDataSource.Factory()
-                                    .setUserAgent(initialChannel.agent ?: "Mozilla/5.0")
-                                    .setDefaultRequestProperties(mapOf(
-                                        "Referer" to (initialChannel.eh1?.replace("Referer: ", "") ?: ""),
-                                        "Origin" to (initialChannel.origin ?: "")
-                                    ))
-                                val mediaSource = HlsMediaSource.Factory(dataSourceFactory)
-                                    .createMediaSource(MediaItem.fromUri(newUrl))
-                                setMediaSource(mediaSource)
-                                prepare()
-                                play()
-                            }
-                        }
-                    }
-                }
-            })
-        }
-    }
-
-    LaunchedEffect(currentUrl) {
-        if (currentUrl.isNotEmpty()) {
-            val dataSourceFactory = DefaultHttpDataSource.Factory()
-                .setUserAgent(initialChannel.agent ?: "Mozilla/5.0")
-                .setDefaultRequestProperties(mapOf(
-                    "Referer" to (initialChannel.eh1?.replace("Referer: ", "") ?: ""),
-                    "Origin" to (initialChannel.origin ?: "")
-                ))
-            val mediaSource = HlsMediaSource.Factory(dataSourceFactory)
-                .createMediaSource(MediaItem.fromUri(currentUrl))
-            exoPlayer.setMediaSource(mediaSource)
-            exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
-        }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            exoPlayer.release()
-        }
-    }
-
-    AndroidView(
-        factory = {
-            PlayerView(context).apply {
-                player = exoPlayer
-                useController = true
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-            }
-        },
-        modifier = Modifier.fillMaxSize()
-    )
-}
-
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun WebViewScreen(url: String, agent: String) {
+fun WebViewContent(url: String, agent: String) {
     AndroidView(
         factory = { context ->
             WebView(context).apply {
