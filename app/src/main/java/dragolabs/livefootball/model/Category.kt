@@ -6,14 +6,14 @@ data class Category(
     @SerializedName(value = "cid", alternate = ["category_id", "id"]) 
     val cid: String? = null,
     
-    @SerializedName(value = "category_name", alternate = ["category_title", "title"]) 
+    @SerializedName(value = "category_name", alternate = ["category_title", "title", "name"]) 
     val categoryName: String? = null,
     
-    @SerializedName(value = "category_image", alternate = ["image", "category_img"]) 
+    @SerializedName(value = "category_image", alternate = ["image", "category_img", "img"]) 
     val categoryImage: String? = null
 )
 
 data class ConfigResponse(
-    @SerializedName("categories") val categories: List<Category>? = null,
-    @SerializedName("main_v2") val mainV2: String? = null
+    @SerializedName(value = "categories", alternate = ["category", "LIVETV"]) 
+    val categories: List<Category>? = null
 )
