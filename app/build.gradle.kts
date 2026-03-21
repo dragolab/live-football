@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "dragolabs.livefootball"
+    namespace = "dragolabs.calciolive"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "dragolabs.livefootball"
+        applicationId = "dragolabs.calciolive"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
