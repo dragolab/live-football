@@ -56,8 +56,32 @@ class SportViewModel : ViewModel() {
         }
     }
 
+    // --- FUNZIONE MODIFICATA PER SBLOCCARE SD/HD ---
     fun selectChannel(channel: Channel?) {
-        _selectedChannel.value = channel
+        if (channel == null) {
+            _selectedChannel.value = null
+            return
+        }
+
+        // Mostriamo l'indicatore di caricamento mentre sblocchiamo l'URL
+        _isLoading.value = true
+
+        viewModelScope.launch {
+            val initialUrl = channel.channelUrl ?: ""
+            val type = channel.channelType ?: "" // Assicurati che 'channelType' esista nel tuo Channel.kt
+            val agent = channel.agent
+            val referer = channel.eh1
+
+            // Risolviamo l'URL tramite il Repository
+            val resolvedUrl = repository.resolveDynamicUrl(initialUrl, type, agent, referer)
+
+            // Aggiorniamo il canale con l'URL sbloccato.
+            // Usa .copy() se Channel è una data class, altrimenti riassegna il valore.
+            val updatedChannel = channel.copy(channelUrl = resolvedUrl)
+
+            _selectedChannel.value = updatedChannel
+            _isLoading.value = false
+        }
     }
 
     suspend fun refreshChannelUrl(channel: Channel): String? {
